@@ -7,6 +7,7 @@ require("dotenv").config();
 const express = require("express");
 const bcrypt = require("bcrypt");
 const app = express();
+const User = require("./models/User");
 
 const mongoose = require("mongoose");
 app.use(express.json());
@@ -40,41 +41,86 @@ app.post("/api/test", (req, res) => {
 });
 });
 
+
 app.post("/api/register", async (req, res) => {
-    const { name, email, password } = req.body;
+    try {
+        const { name, email, password } = req.body;
 
-    if (!name || !email || !password) {
-        return res.status(400).json({
+        // Step 1: Check required fields
+        if (!name || !email || !password) {
+            return res.status(400).json({
+                success: false,
+                message: "Name, email and password are required"
+            });
+        }
+
+        // Step 2: Validate email format
+        const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+        if (!emailPattern.test(email)) {
+            return res.status(400).json({
+                success: false,
+                message: "Please provide a valid email address"
+            });
+        }
+
+        // Step 3: Validate password length
+        if (password.length < 8) {
+            return res.status(400).json({
+                success: false,
+                message: "Password must be at least 8 characters long"
+            });
+        }
+
+        // Step 4: Check whether email already exists
+        const existingUser = await User.findOne({ email });
+
+        if (existingUser) {
+            return res.status(409).json({
+                success: false,
+                message: "Email is already registered"
+            });
+        }
+
+        // Step 5: Hash the password
+        const hashedPassword = await bcrypt.hash(password, 10);
+
+        // Step 6: Create a new user in MongoDB
+        const newUser = await User.create({
+            name,
+            email,
+            password: hashedPassword
+        });
+
+        // Step 7: Send a safe response
+        res.status(201).json({
+            success: true,
+            message: "User registered successfully",
+            user: {
+                id: newUser._id,
+                name: newUser.name,
+                email: newUser.email
+            }
+        });
+
+    } catch (error) {
+        console.error("Registration error:", error.message);
+
+        // Handle duplicate email index errors
+        if (error.code === 11000) {
+            return res.status(409).json({
+                success: false,
+                message: "Email is already registered"
+            });
+        }
+
+        res.status(500).json({
             success: false,
-            message: "Name, email and password are required"
+            message: "Internal server error"
         });
     }
-
-    const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-if (!emailPattern.test(email)) {
-    return res.status(400).json({
-        success: false,
-        message: "Please provide a valid email address"
-    });
-}
-
-    if (password.length < 8) {
-        return res.status(400).json({
-            success: false,
-            message: "Password must be at least 8 characters long"
-        });
-    }
-
-    const hashedPassword = await bcrypt.hash(password, 10);
-
-console.log("Password hashed successfully");
-
-    res.status(201).json({
-        success: true,
-        message: "Registration input is valid"
-    });
 });
+
 
 mongoose.connect(process.env.MONGODB_URI)
     .then(() => {
